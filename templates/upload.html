@@ -2,15 +2,37 @@
 <html>
 <head>
     <title>Upload Your Video</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+        }
+        form {
+            margin-top: 20px;
+        }
+        input[type="submit"] {
+            padding: 8px 16px;
+            font-size: 16px;
+        }
+        small {
+            display: block;
+            margin-top: 10px;
+            color: gray;
+        }
+    </style>
 </head>
 <body>
     <h2>Upload a video to analyze your body measurements</h2>
-    <form method="POST" enctype="multipart/form-data">
+    <form method="POST" action="/upload" enctype="multipart/form-data">
         <label>Video File:</label><br>
         <input type="file" name="video" required><br><br>
+
         <label>Your Height (cm):</label><br>
-        <input type="number" name="height_cm" step="0.1" required><br><br>
+        <input type="number" name="height" step="0.1" required><br><br>
+
         <input type="submit" value="Analyze">
+        <small>(Max video size: 20MB. Recommended resolution: 360p–720p)</small>
     </form>
 </body>
 </html>
+
