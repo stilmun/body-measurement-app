@@ -2,12 +2,39 @@
 <html>
 <head>
     <title>Measurement Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 50%;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #eee;
+        }
+        img {
+            max-width: 500px;
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
 <body>
     <h2>Analysis Results</h2>
-    <img src="{{ url_for('static', filename='annotated.jpg') }}" style="max-width: 500px;"><br><br>
 
-    <table border="1" cellpadding="8">
+    {% if image_path %}
+        <img src="{{ url_for('static', filename=image_path) }}" alt="Annotated Pose Image">
+    {% else %}
+        <p><em>No annotated image available.</em></p>
+    {% endif %}
+
+    <table>
         <tr><th>Measurement</th><th>Length (cm)</th></tr>
         {% for label, value in measurements.items() %}
         <tr><td>{{ label }}</td><td>{{ "%.2f"|format(value) }}</td></tr>

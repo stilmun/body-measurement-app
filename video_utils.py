@@ -1,4 +1,3 @@
-
 import cv2
 import numpy as np
 import os
@@ -21,19 +20,17 @@ KEYPOINT_NAMES = [
 def preprocess_video(input_path, output_path="processed_video.mp4", max_duration=10):
     try:
         command = [
-            "ffmpeg",
-            "-i", input_path,
+            "ffmpeg", "-i", input_path,
             "-vf", "scale=-2:360",
             "-t", str(max_duration),
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-y",
-            output_path
+            "-c:v", "libx264", "-preset", "ultrafast",
+            "-c:a", "aac", "-b:a", "128k",
+            "-y", output_path
         ]
         subprocess.run(command, check=True)
         return output_path
     except subprocess.CalledProcessError as e:
-        print("❌ Error processing video:", e)
+        print("❌ Error processing video with ffmpeg:", e)
         return None
 
 # BlazePose keypoint detector
@@ -57,7 +54,7 @@ def draw_keypoints(frame, keypoints, threshold=0.8):
         cv2.circle(frame, (cx, cy), radius, color, -1)
     return frame
 
-# Extract frames from video
+# Extract frames
 def extract_frames(video_path, num_frames=30):
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -83,15 +80,19 @@ You are a pose analysis assistant. Here are the keypoints:
 Tell me which body parts are reliable for measurement (confidence > 0.8).
 Only return a JSON with keys: "view", "reliable_parts", "notes"
 """
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are a pose analysis assistant."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.4,
-    )
-    return json.loads(response.choices[0].message["content"])
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a pose analysis assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+        )
+        return json.loads(response.choices[0].message["content"])
+    except Exception as e:
+        print("❌ OpenAI API Error:", e)
+        return {"view": "unknown", "reliable_parts": [], "notes": "API error"}
 
 # Helpers
 def pixel_distance(p1, p2):
@@ -101,16 +102,18 @@ def convert_to_pixel_coords(keypoints, image_shape):
     h, w = image_shape[:2]
     return [(int(x * w), int(y * h), c) for y, x, c in keypoints]
 
-# 🧠 Main Process
+# 🧠 Main Flow
 def process_video_and_measure(video_path, height_cm):
     processed_path = preprocess_video(video_path)
     if not processed_path:
         return {"error": "Video preprocessing failed"}, None
 
     os.makedirs("annotated_frames", exist_ok=True)
-    frames = extract_frames(processed_path, num_frames=30)
+    os.makedirs("static", exist_ok=True)
 
+    frames = extract_frames(processed_path, num_frames=30)
     frame_data = []
+
     for idx, frame in frames:
         blazepose_kps = detect_pose_blazepose(frame)
         if blazepose_kps is None:
@@ -129,7 +132,6 @@ def process_video_and_measure(video_path, height_cm):
 
     all_keypoints = [kp for _, _, _, kp in top]
     keypoints_stack = np.stack(all_keypoints)
-
     weights = keypoints_stack[:, :, 2]
     weights_sum = np.sum(weights, axis=0, keepdims=True)
     weights_normalized = weights / (weights_sum + 1e-6)
@@ -137,7 +139,6 @@ def process_video_and_measure(video_path, height_cm):
     y_avg = np.sum(keypoints_stack[:, :, 0] * weights_normalized, axis=0)
     x_avg = np.sum(keypoints_stack[:, :, 1] * weights_normalized, axis=0)
     conf_avg = np.mean(keypoints_stack[:, :, 2], axis=0)
-
     averaged_kps = np.stack([y_avg, x_avg, conf_avg], axis=-1)
 
     input_data = {
@@ -183,12 +184,7 @@ def process_video_and_measure(video_path, height_cm):
         cv2.circle(frame, (x, y), 4, color, -1)
         cv2.putText(frame, label, (x + 5, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
 
-    cv2.imwrite("static/annotated.jpg", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+    output_path = "static/annotated.jpg"
+    cv2.imwrite(output_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
-    return measurements, "annotated.jpg"
-
-# Optional test
-if __name__ == "__main__":
-    results, img_path = process_video_and_measure("your_video.mp4", height_cm=180)
-    print("\n✅ Final Results:")
-    print(results)
+    return measurements, output_path
