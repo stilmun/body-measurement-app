@@ -23,7 +23,8 @@
 </head>
 <body>
     <h2>Upload a video to analyze your body measurements</h2>
-    <form method="POST" action="/upload" enctype="multipart/form-data">
+    <<form method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+        >
         <label>Video File:</label><br>
         <input type="file" name="video" required><br><br>
 
