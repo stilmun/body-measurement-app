@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Measurement Results</title>
+</head>
+<body>
+    <h2>Analysis Results</h2>
+    <img src="{{ url_for('static', filename='annotated.jpg') }}" style="max-width: 500px;"><br><br>
+
+    <table border="1" cellpadding="8">
+        <tr><th>Measurement</th><th>Length (cm)</th></tr>
+        {% for label, value in measurements.items() %}
+        <tr><td>{{ label }}</td><td>{{ "%.2f"|format(value) }}</td></tr>
+        {% endfor %}
+    </table>
+
+    <br><a href="{{ url_for('upload_video') }}">← Upload another</a>
+</body>
+</html>
