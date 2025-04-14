@@ -5,3 +5,4 @@ tensorflow
 tensorflow-hub
 mediapipe
 openai
+gunicorn
