@@ -5,9 +5,11 @@ from video_utils import process_video_and_measure
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB limit
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# Ensure necessary folders exist
+for folder in ["uploads", "annotated_frames", "static"]:
+    os.makedirs(folder, exist_ok=True)
 
 @app.route('/')
 def index():
@@ -20,13 +22,13 @@ def upload():
         file = request.files['video']
 
         if not file:
-            return "No video uploaded", 400
+            return "❌ No video uploaded", 400
 
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
 
-        # ✅ Let video_utils handle trimming + resizing using ffmpeg
+        # Only ffmpeg-based preprocessing is used (handled inside video_utils)
         results, annotated_path = process_video_and_measure(filepath, height)
 
         if "error" in results:
@@ -36,3 +38,6 @@ def upload():
 
     except Exception as e:
         return f"❌ An unexpected error occurred: {str(e)}", 500
+
+if __name__ == '__main__':
+    pass  # Gunicorn will run this on Render
