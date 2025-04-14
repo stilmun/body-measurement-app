@@ -1,9 +1,11 @@
+
 import cv2
 import numpy as np
 import os
 import openai
 import json
 import mediapipe as mp
+import subprocess
 
 # 🔐 Load OpenAI API Key
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -14,6 +16,25 @@ KEYPOINT_NAMES = [
     "left_wrist", "right_wrist", "left_hip", "right_hip",
     "left_knee", "right_knee", "left_ankle", "right_ankle"
 ]
+
+# 🧩 Resize + Trim video with ffmpeg
+def preprocess_video(input_path, output_path="processed_video.mp4", max_duration=10):
+    try:
+        command = [
+            "ffmpeg",
+            "-i", input_path,
+            "-vf", "scale=-2:360",
+            "-t", str(max_duration),
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-y",
+            output_path
+        ]
+        subprocess.run(command, check=True)
+        return output_path
+    except subprocess.CalledProcessError as e:
+        print("❌ Error processing video:", e)
+        return None
 
 # BlazePose keypoint detector
 def detect_pose_blazepose(frame):
@@ -26,7 +47,7 @@ def detect_pose_blazepose(frame):
         landmarks = results.pose_landmarks.landmark
         return np.array([[l.y, l.x, l.visibility] for l in landmarks])  # shape: (33, 3)
 
-# Draw keypoints with confidence indicator
+# Draw keypoints
 def draw_keypoints(frame, keypoints, threshold=0.8):
     h, w, _ = frame.shape
     for i, (y, x, c) in enumerate(keypoints):
@@ -36,7 +57,7 @@ def draw_keypoints(frame, keypoints, threshold=0.8):
         cv2.circle(frame, (cx, cy), radius, color, -1)
     return frame
 
-# Frame extractor
+# Extract frames from video
 def extract_frames(video_path, num_frames=30):
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -52,7 +73,7 @@ def extract_frames(video_path, num_frames=30):
     cap.release()
     return frames
 
-# ChatGPT validator
+# ChatGPT filter
 def analyze_pose_with_chatgpt(frame_data):
     prompt = f"""
 You are a pose analysis assistant. Here are the keypoints:
@@ -72,19 +93,22 @@ Only return a JSON with keys: "view", "reliable_parts", "notes"
     )
     return json.loads(response.choices[0].message["content"])
 
-# Distance between two points
+# Helpers
 def pixel_distance(p1, p2):
     return np.linalg.norm(np.array(p1) - np.array(p2))
 
-# Convert keypoints to pixel coordinates
 def convert_to_pixel_coords(keypoints, image_shape):
     h, w = image_shape[:2]
     return [(int(x * w), int(y * h), c) for y, x, c in keypoints]
 
-# 🧠 MAIN FLOW
+# 🧠 Main Process
 def process_video_and_measure(video_path, height_cm):
+    processed_path = preprocess_video(video_path)
+    if not processed_path:
+        return {"error": "Video preprocessing failed"}, None
+
     os.makedirs("annotated_frames", exist_ok=True)
-    frames = extract_frames(video_path, num_frames=30)
+    frames = extract_frames(processed_path, num_frames=30)
 
     frame_data = []
     for idx, frame in frames:
@@ -95,7 +119,6 @@ def process_video_and_measure(video_path, height_cm):
         avg_conf = np.mean(blazepose_kps[:, 2])
         frame_data.append((avg_conf, idx, frame, blazepose_kps))
 
-        # Save debug image
         frame_bgr = cv2.cvtColor(frame.copy(), cv2.COLOR_RGB2BGR)
         debug_img = draw_keypoints(frame_bgr.copy(), blazepose_kps)
         cv2.imwrite(f"annotated_frames/frame_{idx}_blazepose.jpg", debug_img)
@@ -104,9 +127,8 @@ def process_video_and_measure(video_path, height_cm):
     if not top:
         return {"error": "No valid frames found"}, None
 
-    # Average by confidence
     all_keypoints = [kp for _, _, _, kp in top]
-    keypoints_stack = np.stack(all_keypoints)  # (10, 33, 3)
+    keypoints_stack = np.stack(all_keypoints)
 
     weights = keypoints_stack[:, :, 2]
     weights_sum = np.sum(weights, axis=0, keepdims=True)
@@ -118,12 +140,6 @@ def process_video_and_measure(video_path, height_cm):
 
     averaged_kps = np.stack([y_avg, x_avg, conf_avg], axis=-1)
 
-    # Debug: print confidences
-    print("\n🔎 Keypoint Confidences:")
-    for i, (_, _, c) in enumerate(averaged_kps):
-        print(f"{KEYPOINT_NAMES[i] if i < len(KEYPOINT_NAMES) else f'kp_{i}'}: {c:.2f}")
-
-    # Send to ChatGPT for reliability check
     input_data = {
         "frame_index": -1,
         "keypoints": averaged_kps.tolist()
@@ -161,7 +177,6 @@ def process_video_and_measure(video_path, height_cm):
         "Arm Length": round(((left_arm_px + right_arm_px) / 2) * cm_per_px, 2),
     }
 
-    # Save annotated final image
     for i, (x, y, c) in enumerate(pixel_coords):
         label = KEYPOINT_NAMES[i] if i < len(KEYPOINT_NAMES) else f"kp_{i}"
         color = (0, 255, 0) if c >= 0.8 else (0, 0, 255)
